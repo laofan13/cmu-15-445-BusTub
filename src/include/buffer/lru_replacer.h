@@ -50,6 +50,7 @@ class LRUReplacer : public Replacer {
   // TODO(student): implement me!
   std::list<frame_id_t> frameList;
   int len;
+  std::mutex latch_;
 };
 
 }  // namespace bustub

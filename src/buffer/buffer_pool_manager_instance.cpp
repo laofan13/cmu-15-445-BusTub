@@ -15,6 +15,8 @@
 #include "common/macros.h"
 #include "common/logger.h"
 
+#include <thread>
+
 namespace bustub {
 
 BufferPoolManagerInstance::BufferPoolManagerInstance(size_t pool_size, DiskManager *disk_manager,
@@ -51,6 +53,7 @@ BufferPoolManagerInstance::~BufferPoolManagerInstance() {
 auto BufferPoolManagerInstance::FlushPgImp(page_id_t page_id) -> bool {
   // Make sure you call DiskManager::WritePage!
   // LOG_INFO("Flush Page %d",page_id);
+  std::lock_guard<std::mutex> lck(latch_);
   if(page_table_.find(page_id) == page_table_.end())  return false;
   auto frame_id = page_table_[page_id];
   auto page = &pages_[static_cast<int>(frame_id)];
@@ -69,6 +72,8 @@ auto BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) -> Page * {
   // 0.   Make sure you call AllocatePage!
   auto allo_page_id = AllocatePage();
 
+  std::lock_guard<std::mutex> lck(latch_);
+   
   // LOG_INFO("New a Page: %d",allo_page_id);
   // 1.   If all the pages in the buffer pool are pinned, return nullptr.
   size_t i = 0;
@@ -110,6 +115,8 @@ auto BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) -> Page * {
 auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * {
   frame_id_t frame_id;
   Page *page;
+
+  std::lock_guard<std::mutex> lck(latch_);
   // 1.     Search the page table for the requested page (P).
   // 1.1    If P exists, pin it and return it immediately.
   // 1.2    If P does not exist, find a replacement page (R) from either the free list or the replacer.
@@ -153,6 +160,7 @@ auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * {
 }
 
 auto BufferPoolManagerInstance::DeletePgImp(page_id_t page_id) -> bool {
+  std::lock_guard<std::mutex> lck(latch_);
   // 0.   Make sure you call DeallocatePage!
   DeallocatePage(page_id);
   // 1.   Search the page table for the requested page (P).
@@ -174,6 +182,7 @@ auto BufferPoolManagerInstance::DeletePgImp(page_id_t page_id) -> bool {
   page->ResetMemory();
 
   free_list_.push_back(frame_id);
+
   return true;
 }
 
@@ -181,6 +190,7 @@ auto BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) -> 
   // for(auto item: page_table_) {
   //   LOG_INFO("page_table_[%d]=%d", item.first,item.second);
   // }
+  std::lock_guard<std::mutex> lck(latch_);
   if(page_table_.find(page_id) == page_table_.end())  return false;
   auto frame_id = page_table_[page_id];
   auto page = &pages_[static_cast<int>(frame_id)];
@@ -192,7 +202,6 @@ auto BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) -> 
   if(--page->pin_count_ == 0) {
     replacer_->Unpin(frame_id);
   } 
-  
   return true; 
 }
 
