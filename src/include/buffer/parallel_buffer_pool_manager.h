@@ -16,6 +16,7 @@
 #include "recovery/log_manager.h"
 #include "storage/disk/disk_manager.h"
 #include "storage/page/page.h"
+#include <vector>
 
 namespace bustub {
 
@@ -86,5 +87,16 @@ class ParallelBufferPoolManager : public BufferPoolManager {
    * Flushes all the pages in the buffer pool to disk.
    */
   void FlushAllPgsImp() override;
+
+  /** Number of pages in the buffer pool. */
+  const size_t pool_size_;
+  /** How many instances are in the parallel BPM (if present, otherwise just 1 c) */
+  const uint32_t num_instances_;
+
+  uint32_t start_index_ = 0;
+
+  std::vector<BufferPoolManager*> vec_BPMIs; 
+  /** This latch protects shared data structures. We recommend updating this comment to describe what it protects. */
+  std::mutex latch_;
 };
 }  // namespace bustub

@@ -64,7 +64,9 @@ auto BufferPoolManagerInstance::FlushPgImp(page_id_t page_id) -> bool {
 
 void BufferPoolManagerInstance::FlushAllPgsImp() {
   // You can do it!
-
+  for(auto &entry : page_table_) {
+    FlushPgImp(entry.first);
+  }
 }
 
 auto BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) -> Page * {
