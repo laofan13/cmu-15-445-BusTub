@@ -90,6 +90,8 @@ auto HASH_TABLE_TYPE::GetValue(Transaction *transaction, const KeyType &key, std
   auto directory_page = FetchDirectoryPage();
   auto bucket_page_id = KeyToPageId(key,directory_page);
   auto bucket_page = FetchBucketPage(bucket_page_id);
+  // LOG_DEBUG("bucket idx: %d,page id: %d", bucket_idx,bucket_page_id);
+
   auto retValue = bucket_page->GetValue(key,comparator_,result);
   table_latch_.RUnlock();
   return retValue;
@@ -102,10 +104,9 @@ template <typename KeyType, typename ValueType, typename KeyComparator>
 auto HASH_TABLE_TYPE::Insert(Transaction *transaction, const KeyType &key, const ValueType &value) -> bool {
   table_latch_.WLock();
   auto directory_page = FetchDirectoryPage();
-  auto bucket_idx = KeyToDirectoryIndex(key,directory_page);
   auto bucket_page_id = KeyToPageId(key,directory_page);
   auto bucket_page = FetchBucketPage(bucket_page_id);
-  LOG_DEBUG("Insert a (,) with index: %d", bucket_idx);
+  // LOG_DEBUG("bucket idx: %d,page id: %d", bucket_idx,bucket_page_id);
 
   bool retValue;
   if(bucket_page->IsFull()){
@@ -127,7 +128,7 @@ auto HASH_TABLE_TYPE::SplitInsert(Transaction *transaction, const KeyType &key, 
   while(bucket_page->IsFull()) {
     auto globalDepth = directory_page->GetGlobalDepth();
     auto localDepth = directory_page->GetLocalDepth(bucket_idx);
-    LOG_DEBUG("Bucket[%d] is full : GlobalDepth=%d, localDepth=%d",bucket_idx,globalDepth,localDepth);
+    // LOG_DEBUG("Bucket[%d] is full : GlobalDepth=%d, localDepth=%d",bucket_idx,globalDepth,localDepth);
     if (globalDepth == localDepth) {
       uint32_t len = 1 << globalDepth;
       for (uint32_t i = 0; i < len; i++) {
@@ -155,23 +156,28 @@ auto HASH_TABLE_TYPE::SplitInsert(Transaction *transaction, const KeyType &key, 
       // increase local depth
       directory_page->IncrLocalDepth(index);
     }
+    // for(int i = 0; i < int(1 << globalDepth); i++) {
+    //   // increase local depth
+    //   LOG_DEBUG("Bucket[%d]=%d",i,directory_page->GetBucketPageId(i));
+    // }
 
-    for(size_t i = 0; i < 1; i++) {
+    for(size_t i = 0; i < BUCKET_ARRAY_SIZE; i++) {
+      if(!bucket_page->IsReadable(i)) continue;
       auto old_key = bucket_page->KeyAt(i);
       auto hashkey = Hash(old_key);
       if(hashkey & localDepthMask) {
-        LOG_DEBUG("move a (,) hashVal=%d from %d to %d",hashkey,bucket_page_id,new_bucket_page_id);
+        // LOG_DEBUG("move a (,) hashVal=%d from %d to %d",hashkey,bucket_page_id,new_bucket_page_id);
         new_bucket_page->Insert(old_key,bucket_page->ValueAt(i),comparator_);
         bucket_page->RemoveAt(i);
       }
     }
-    LOG_DEBUG("Bucket's page id: %d",bucket_page_id);
-    bucket_page->PrintBucket();
-    LOG_DEBUG("Bucket's page id: %d",new_bucket_page_id);
-    new_bucket_page->PrintBucket();
+    // LOG_DEBUG("Bucket's page id: %d",bucket_page_id);
+    // bucket_page->PrintBucket();
+    // LOG_DEBUG("Bucket's page id: %d",new_bucket_page_id);
+    // new_bucket_page->PrintBucket();
 
     bucket_idx = KeyToDirectoryIndex(key,directory_page);
-    LOG_DEBUG("Bucket Index: %d after IncrGlobalDepth\n",bucket_idx);
+    // LOG_DEBUG("Bucket Index: %d after IncrGlobalDepth\n",bucket_idx);
     if(bucket_idx & localDepthMask) {
       bucket_page_id = new_bucket_page_id;
       bucket_page = new_bucket_page;
