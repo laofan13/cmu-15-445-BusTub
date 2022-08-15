@@ -59,6 +59,10 @@ class InsertExecutor : public AbstractExecutor {
  private:
   /** The insert plan node to be executed*/
   const InsertPlanNode *plan_;
+  std::unique_ptr<AbstractExecutor> child_executor_;
+  TableInfo *table_info_;
+  std::vector<IndexInfo *> indexes_;
+  
 };
 
 }  // namespace bustub
