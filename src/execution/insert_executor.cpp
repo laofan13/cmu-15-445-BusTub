@@ -20,12 +20,18 @@ namespace bustub {
 
 InsertExecutor::InsertExecutor(ExecutorContext *exec_ctx, const InsertPlanNode *plan,
                                std::unique_ptr<AbstractExecutor> &&child_executor)
-    : AbstractExecutor(exec_ctx),plan_(plan),child_executor_(std::move(child_executor)) {}
+    : AbstractExecutor(exec_ctx),
+    plan_(plan),
+    child_executor_(std::move(child_executor)) {}
 
 void InsertExecutor::Init() {
     auto catalog = exec_ctx_->GetCatalog();
     table_info_ = catalog->GetTable(plan_->TableOid());
     indexes_ = catalog->GetTableIndexes(table_info_->name_);
+    
+    if(!plan_->IsRawInsert() && child_executor_ != nullptr) { 
+        child_executor_->Init();
+    }
 }
 
 auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool { 
