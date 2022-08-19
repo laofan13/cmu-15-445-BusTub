@@ -35,8 +35,7 @@ void DeleteExecutor::Init() {
 
 auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool { 
     while(child_executor_->Next(tuple,rid)) {
-        LOG_DEBUG("Delete a Tuple %s", tuple->ToString(&table_info_->schema_).c_str());
-
+        // LOG_DEBUG("Delete a Tuple %s", tuple->ToString(&table_info_->schema_).c_str());
         if(!table_info_->table_->MarkDelete(*rid,exec_ctx_->GetTransaction()))
             throw Exception("Failed to Delete tuple:" + tuple->ToString(&table_info_->schema_));
         // update index 
