@@ -15,7 +15,9 @@
 #include <utility>
 #include <vector>
 
+#include "common/util/hash_util.h"
 #include "execution/plans/abstract_plan.h"
+#include "storage/table/tuple.h"
 
 namespace bustub {
 
@@ -65,4 +67,43 @@ class HashJoinPlanNode : public AbstractPlanNode {
   const AbstractExpression *right_key_expression_;
 };
 
+/** JoinKey represents a key in an join operation */
+struct JoinKey {
+  /** The group-by values */
+  std::vector<Value> Join_bys_;
+
+  /**
+   * Compares two join keys for equality.
+   * @param other the other join key to be compared with
+   * @return `true` if both join keys have equivalent group-by expressions, `false` otherwise
+   */
+  auto operator==(const JoinKey &other) const -> bool {
+    for (uint32_t i = 0; i < other.Join_bys_.size(); i++) {
+      if (Join_bys_[i].CompareEquals(other.Join_bys_[i]) != CmpBool::CmpTrue) {
+        return false;
+      }
+    }
+    return true;
+  }
+};
+
+using JoinValue = Tuple;
+
+}  // namespace bustub
+
+namespace std {
+
+/** Implements std::hash on AggregateKey */
+template <>
+struct hash<bustub::JoinKey> {
+  auto operator()(const bustub::JoinKey &agg_key) const -> std::size_t {
+    size_t curr_hash = 0;
+    for (const auto &key : agg_key.Join_bys_) {
+      if (!key.IsNull()) {
+        curr_hash = bustub::HashUtil::CombineHashes(curr_hash, bustub::HashUtil::HashValue(&key));
+      }
+    }
+    return curr_hash;
+  }
+};
 }  // namespace bustub

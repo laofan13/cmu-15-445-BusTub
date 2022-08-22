@@ -54,21 +54,10 @@ auto NestedLoopJoinExecutor::Next(Tuple *tuple, RID *rid) -> bool {
 
             std::vector<Value> values;
             values.reserve(columns.size());
-            for(auto &col : columns) {
-                auto out_columns = out_schema1->GetColumns();
-                for (uint32_t i = 0; i < out_columns.size(); ++i) {
-                    if (out_columns[i].GetName() == col.GetName()) {
-                        values.emplace_back(left_tuple.GetValue(out_schema1, i));
-                        continue;
-                    }
-                }
-                out_columns = out_schema2->GetColumns();
-                for (uint32_t i = 0; i < out_columns.size(); ++i) {
-                    if (out_columns[i].GetName() == col.GetName()) {
-                        values.emplace_back(right_tuple.GetValue(out_schema2, i));
-                        continue;
-                    }
-                }
+            
+            for(auto &col : columns) { 
+                auto expr_ = col.GetExpr();
+                values.emplace_back(expr_->EvaluateJoin(&left_tuple,out_schema1,&right_tuple,out_schema2));
             }
             *tuple = Tuple(values, outSchema);
             // LOG_DEBUG("NestedLoopJoin Scan a Tuple %s", tuple->ToString(outSchema).c_str());

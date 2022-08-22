@@ -13,6 +13,7 @@
 #pragma once
 
 #include <memory>
+#include <unordered_map>
 #include <utility>
 
 #include "execution/executor_context.h"
@@ -21,6 +22,74 @@
 #include "storage/table/tuple.h"
 
 namespace bustub {
+
+class SimpleJoinHashTable {
+  public:
+  /**
+   * Construct a new SimpleJoinHashTable instance.
+   */
+  SimpleJoinHashTable() = default;
+
+  /**
+   * Inserts a value into the hash table and then combines it with the current aggregation.
+   * @param join_key the key to be inserted
+   * @param join_val the value to be inserted
+   */
+  void InsertTuple(const JoinKey &join_key, const JoinValue &join_val) {
+      ht_.insert({join_key, join_val});
+  }
+
+  /**
+   * Inserts a value into the hash table and then combines it with the current aggregation.
+   * @param join_key the key to be inserted
+   */
+  auto FindTuple(const JoinKey &join_key) -> std::vector<JoinValue>{
+    std::vector<JoinValue> join_values;
+    for(auto it = ht_.find(join_key); it != ht_.end();++it) {
+      join_values.push_back(it->second);
+    }
+    return join_values;
+  }
+
+  /** An iterator over the aggregation hash table */
+  class Iterator {
+   public:
+    /** Creates an iterator for the aggregate map. */
+    explicit Iterator(std::unordered_map<JoinKey, JoinValue>::const_iterator iter) : iter_{iter} {}
+
+    /** @return The key of the iterator */
+    auto Key() -> const JoinKey & { return iter_->first; }
+
+    /** @return The value of the iterator */
+    auto Val() -> const JoinValue & { return iter_->second; }
+
+    /** @return The iterator before it is incremented */
+    auto operator++() -> Iterator & {
+      ++iter_;
+      return *this;
+    }
+
+    /** @return `true` if both iterators are identical */
+    auto operator==(const Iterator &other) -> bool { return this->iter_ == other.iter_; }
+
+    /** @return `true` if both iterators are different */
+    auto operator!=(const Iterator &other) -> bool { return this->iter_ != other.iter_; }
+
+   private:
+    /** Aggregates map */
+    std::unordered_map<JoinKey, JoinValue>::const_iterator iter_;
+  };
+
+  /** @return Iterator to the start of the hash table */
+  auto Begin() -> Iterator { return Iterator{ht_.cbegin()}; }
+
+  /** @return Iterator to the end of the hash table */
+  auto End() -> Iterator { return Iterator{ht_.cend()}; }
+
+ private:
+  /** The hash table is just a map from aggregate keys to aggregate values */
+  std::unordered_map<JoinKey, JoinValue> ht_{};
+};
 
 /**
  * HashJoinExecutor executes a nested-loop JOIN on two tables.
@@ -54,6 +123,10 @@ class HashJoinExecutor : public AbstractExecutor {
  private:
   /** The NestedLoopJoin plan node to be executed. */
   const HashJoinPlanNode *plan_;
+  std::unique_ptr<AbstractExecutor> left_executor_;
+  std::unique_ptr<AbstractExecutor> right_executor_;
+  /** Simple join hash table */
+  SimpleJoinHashTable aht_;
 };
 
 }  // namespace bustub
