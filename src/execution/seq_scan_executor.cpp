@@ -29,12 +29,14 @@ void SeqScanExecutor::Init() {
 }
 
 auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool { 
+    auto table_schema = table_info_->schema_;
     auto predicate = plan_->GetPredicate();
+
     for(;table_iterator_ != table_info_->table_->End();++table_iterator_) {
         auto tmp_tuple = *table_iterator_;
         // LOG_DEBUG("Scan a Tuple %s", tmp_tuple.ToString(&table_info_->schema_).c_str());
         if(predicate != nullptr) {
-             auto val = predicate->Evaluate(&tmp_tuple,&table_info_->schema_);
+             auto val = predicate->Evaluate(&tmp_tuple,&table_schema);
              if(!val.GetAs<bool>()) continue;
         }
         auto outSchema = plan_->OutputSchema();
@@ -42,12 +44,15 @@ auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
 
         std::vector<Value> values;
         values.reserve(columns.size());
+
         for(auto &col : columns) {
-            values.emplace_back(tmp_tuple.GetValue(&table_info_->schema_, table_info_->schema_.GetColIdx(col.GetName())));
+            auto expr = col.GetExpr();
+            values.emplace_back(expr->Evaluate(&tmp_tuple,&table_schema));
         }
         
         *tuple = Tuple(values, outSchema);
         *rid = tmp_tuple.GetRid();
+        
         table_iterator_++;
         return true;
     }

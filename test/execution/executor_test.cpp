@@ -487,7 +487,7 @@ TEST_F(ExecutorTest, SimpleHashJoinTest) {
 }
 
 // SELECT COUNT(col_a), SUM(col_a), min(col_a), max(col_a) from test_1;
-TEST_F(ExecutorTest, DISABLED_SimpleAggregationTest) {
+TEST_F(ExecutorTest, SimpleAggregationTest) {
   const Schema *scan_schema;
   std::unique_ptr<AbstractPlanNode> scan_plan;
   {
@@ -537,7 +537,7 @@ TEST_F(ExecutorTest, DISABLED_SimpleAggregationTest) {
 }
 
 // SELECT count(col_a), col_b, sum(col_c) FROM test_1 Group By col_b HAVING count(col_a) > 100
-TEST_F(ExecutorTest, DISABLED_SimpleGroupByAggregation) {
+TEST_F(ExecutorTest, SimpleGroupByAggregation) {
   const Schema *scan_schema;
   std::unique_ptr<AbstractPlanNode> scan_plan;
   {
@@ -590,7 +590,7 @@ TEST_F(ExecutorTest, DISABLED_SimpleGroupByAggregation) {
 }
 
 // SELECT colA, colB FROM test_3 LIMIT 10
-TEST_F(ExecutorTest, DISABLED_SimpleLimitTest) {
+TEST_F(ExecutorTest, SimpleLimitTest) {
   auto *table_info = GetExecutorContext()->GetCatalog()->GetTable("test_3");
   auto &schema = table_info->schema_;
 
