@@ -66,21 +66,21 @@ auto ParallelBufferPoolManager::FlushPgImp(page_id_t page_id) -> bool {
 auto ParallelBufferPoolManager::NewPgImp(page_id_t *page_id) -> Page * {
   // create new page. We will request page allocation in a round robin manner from the underlying
   // BufferPoolManagerInstances
-  Page *page = nullptr;
   // 1.   From a starting index of the BPMIs, call NewPageImpl until either 1) success and return 2) looped around to
   // starting index and return nullptr
   // 2.   Bump the starting index (mod number of instances) to start search at a different BPMI each time this function
   // is called
+  std::unique_lock<std::mutex> latch(latch_);
   for(uint32_t i = 0; i < num_instances_;++i ) {
     auto instance_index = (start_index_ + i) % num_instances_;
-    page = vec_BPMIs[instance_index]->NewPage(page_id);
+    auto page = vec_BPMIs[instance_index]->NewPage(page_id);
     if(page) {
       start_index_++;
-      break;
+      return page;
     }
   }
  
-  return page;
+  return nullptr;
 }
 
 auto ParallelBufferPoolManager::DeletePgImp(page_id_t page_id) -> bool {
@@ -91,6 +91,9 @@ auto ParallelBufferPoolManager::DeletePgImp(page_id_t page_id) -> bool {
 
 void ParallelBufferPoolManager::FlushAllPgsImp() {
   // flush all pages from all BufferPoolManagerInstances
+  for(uint32_t i = 0; i < num_instances_;++i ) {
+    vec_BPMIs[i]->FlushAllPages();
+  }
 }
 
 }  // namespace bustub

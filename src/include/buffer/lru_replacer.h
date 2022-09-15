@@ -48,8 +48,8 @@ class LRUReplacer : public Replacer {
 
  private:
   // TODO(student): implement me!
-  std::list<frame_id_t> frameList;
-  int len;
+  std::list<frame_id_t> frame_list_;
+  std::size_t num_pages_;
   std::mutex latch_;
 };
 

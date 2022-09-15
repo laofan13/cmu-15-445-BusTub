@@ -144,45 +144,36 @@ auto HASH_TABLE_TYPE::SplitInsert(Transaction *transaction, const KeyType &key, 
     buffer_pool_manager_->NewPage(&new_bucket_page_id);
     auto new_bucket_page = FetchBucketPage(new_bucket_page_id);
     
-    // reasgin bucket page
-    auto localDepthMask = 1 << localDepth;
-    auto leastBit = bucket_idx & (localDepthMask - 1);
-    uint32_t len = 1 << (globalDepth  - localDepth);
-    for(uint32_t i = 0; i < len; i++) {
-      auto index = i << localDepth | leastBit;
-      if(index & localDepthMask) {
+    // If the highest bit of the local depth is 1, allocate a new bucket.otherwise old bucket
+    auto localDepthBit = 1 << localDepth;
+    auto bucketIndexLowBit = bucket_idx & (localDepthBit - 1);
+    uint32_t size = 1 << (globalDepth  - localDepth);
+    for(uint32_t i = 0; i < size; i++) {
+      auto index = i << localDepth | bucketIndexLowBit;
+      if(index & localDepthBit) {
         directory_page->SetBucketPageId(index,new_bucket_page_id);
       }
-      // increase local depth
       directory_page->IncrLocalDepth(index);
     }
-    // for(int i = 0; i < int(1 << globalDepth); i++) {
-    //   // increase local depth
-    //   LOG_DEBUG("Bucket[%d]=%d",i,directory_page->GetBucketPageId(i));
-    // }
-
+  
+    // move element from old bucket to new bucket
     for(size_t i = 0; i < BUCKET_ARRAY_SIZE; i++) {
       if(!bucket_page->IsReadable(i)) continue;
       auto old_key = bucket_page->KeyAt(i);
-      auto hashkey = Hash(old_key);
-      if(hashkey & localDepthMask) {
-        // LOG_DEBUG("move a (,) hashVal=%d from %d to %d",hashkey,bucket_page_id,new_bucket_page_id);
+      auto index = KeyToDirectoryIndex(old_key,directory_page);
+      if(index & localDepthBit) {
         new_bucket_page->Insert(old_key,bucket_page->ValueAt(i),comparator_);
         bucket_page->RemoveAt(i);
       }
     }
-    // LOG_DEBUG("Bucket's page id: %d",bucket_page_id);
-    // bucket_page->PrintBucket();
-    // LOG_DEBUG("Bucket's page id: %d",new_bucket_page_id);
-    // new_bucket_page->PrintBucket();
 
     bucket_idx = KeyToDirectoryIndex(key,directory_page);
-    // LOG_DEBUG("Bucket Index: %d after IncrGlobalDepth\n",bucket_idx);
-    if(bucket_idx & localDepthMask) {
+    if(bucket_idx & localDepthBit) {
       bucket_page_id = new_bucket_page_id;
       bucket_page = new_bucket_page;
     }
   }
+
   return bucket_page->Insert(key,value,comparator_);
 }
 
