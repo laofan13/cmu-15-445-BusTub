@@ -33,7 +33,7 @@
  */
 #define HASH_TABLE_BUCKET_TYPE HashTableBucketPage<KeyType, ValueType, KeyComparator>
 #define DIRECTORY_ARRAY_SIZE 512
-
+#define MAX_BUCKET_DEPTH 9
 /**
  * BUCKET_ARRAY_SIZE is the number of (key, value) pairs that can be stored in an extendible hashing bucket page.
  * It is an approximate calculation based on the size of MappingType (which is a std::pair of KeyType and ValueType).

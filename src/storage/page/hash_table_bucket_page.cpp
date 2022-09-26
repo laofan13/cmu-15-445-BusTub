@@ -21,42 +21,54 @@ namespace bustub {
 
 template <typename KeyType, typename ValueType, typename KeyComparator>
 auto HASH_TABLE_BUCKET_TYPE::GetValue(KeyType key, KeyComparator cmp, std::vector<ValueType> *result) -> bool {
+  auto success = false;
   for(size_t bucket_idx = 0; bucket_idx < BUCKET_ARRAY_SIZE; bucket_idx++) {
     if(IsReadable(bucket_idx) && cmp(array_[bucket_idx].first,key) == 0) {
       result->push_back(array_[bucket_idx].second);
+      success = true;
     }
   }
-  return result->empty() ? false : true;
+  return success;
 }
 
 template <typename KeyType, typename ValueType, typename KeyComparator>
 auto HASH_TABLE_BUCKET_TYPE::Insert(KeyType key, ValueType value, KeyComparator cmp) -> bool {
-  std::vector<ValueType> res;
-  GetValue(key,cmp,&res);
-  // Duplicate values for the same key are not allowed
-  if(find(res.begin(), res.end(), value) != res.end()) return false;
-
-  for(size_t bucket_idx = 0; bucket_idx < BUCKET_ARRAY_SIZE; bucket_idx++) {
-    if(!IsReadable(bucket_idx)) {
-      array_[bucket_idx].first = key;
-      array_[bucket_idx].second = value;
-      SetOccupied(bucket_idx);
-      SetReadable(bucket_idx);
-      return true;
+  if (IsFull()) {
+    return false;
+  }
+  auto available = -1;
+  for (size_t i = 0; i < BUCKET_ARRAY_SIZE; i++) {
+    if (IsReadable(i)) {
+      if(cmp(key, array_[i].first) == 0 && value==array_[i].second){
+        return false;
+      }
+    }else if (available == -1) {
+      available = i;
     }
   }
-  return false;
+
+  // 遍历完看看找没找到空位
+  if (available == -1) {
+    return false;
+  }
+
+  array_[available] = MappingType(key, value);
+  SetOccupied(available);
+  SetReadable(available);
+  return true;
+  
 }
 
 template <typename KeyType, typename ValueType, typename KeyComparator>
 auto HASH_TABLE_BUCKET_TYPE::Remove(KeyType key, ValueType value, KeyComparator cmp) -> bool {
-  for(size_t bucket_idx = 0; bucket_idx < BUCKET_ARRAY_SIZE; bucket_idx++) {
-    if(IsReadable(bucket_idx) && cmp(array_[bucket_idx].first,key) == 0 && array_[bucket_idx].second == value) {
-      RemoveAt(bucket_idx);
-      return true;
+  for(size_t i = 0; i < BUCKET_ARRAY_SIZE; i++) {
+    if (IsReadable(i)) {
+      if (cmp(key, array_[i].first) == 0 && value == array_[i].second) {
+        RemoveAt(i);
+        return true;
+      }
     }
   }
-
   return false;
 }
 
@@ -103,9 +115,24 @@ void HASH_TABLE_BUCKET_TYPE::SetReadable(uint32_t bucket_idx) {
 
 template <typename KeyType, typename ValueType, typename KeyComparator>
 auto HASH_TABLE_BUCKET_TYPE::IsFull() -> bool {
-  for(size_t bucket_idx = 0; bucket_idx < BUCKET_ARRAY_SIZE; bucket_idx++) {
-    if(!IsReadable(bucket_idx)) {
+  u_int8_t mask = 255;
+  // 先以char为单位
+  size_t i_num = BUCKET_ARRAY_SIZE / 8;
+  for (size_t i = 0; i < i_num; i++) {
+    uint8_t c = static_cast<uint8_t>(readable_[i]);
+    if ((c & mask) != mask) {
       return false;
+    }
+  }
+  // 最后还要看剩余的
+  size_t i_remain = BUCKET_ARRAY_SIZE % 8;
+  if (i_remain > 0) {
+    uint8_t c = static_cast<uint8_t>(readable_[i_num]);
+    for (size_t j = 0; j < i_remain; j++) {
+      if ((c & 1) != 1) {
+        return false;
+      }
+      c >>= 1;
     }
   }
   return true;
@@ -113,19 +140,42 @@ auto HASH_TABLE_BUCKET_TYPE::IsFull() -> bool {
 
 template <typename KeyType, typename ValueType, typename KeyComparator>
 auto HASH_TABLE_BUCKET_TYPE::NumReadable() -> uint32_t {
-  uint32_t num  = 0;
-  for(size_t bucket_idx = 0; bucket_idx < BUCKET_ARRAY_SIZE; bucket_idx++) {
-    if(IsReadable(bucket_idx)) {
-      num++;
+  // 要分别对每个char中的每位做判断
+  uint32_t num = 0;
+
+  // 先以char为单位
+  size_t i_num = BUCKET_ARRAY_SIZE / 8;
+  for (size_t i = 0; i < i_num; i++) {
+    uint8_t c = static_cast<uint8_t>(readable_[i]);
+    for (uint8_t j = 0; j < 8; j++) {
+      // 取最低位判断
+      if ((c & 1) > 0) {
+        num++;
+      }
+      c >>= 1;
     }
   }
+
+  // 最后还要看剩余的
+  size_t i_remain = BUCKET_ARRAY_SIZE % 8;
+  if (i_remain > 0) {
+    uint8_t c = static_cast<uint8_t>(readable_[i_num]);
+    for (size_t j = 0; j < i_remain; j++) {
+      // 取最低位判断
+      if ((c & 1) == 1) {
+        num++;
+      }
+      c >>= 1;
+    }
+  }
+
   return num;
 }
 
 template <typename KeyType, typename ValueType, typename KeyComparator>
 auto HASH_TABLE_BUCKET_TYPE::IsEmpty() -> bool {
-  for(size_t bucket_idx = 0; bucket_idx < BUCKET_ARRAY_SIZE; bucket_idx++) {
-    if(IsReadable(bucket_idx)) {
+  for (size_t i = 0; i < sizeof(readable_) / sizeof(readable_[0]); i++) {
+    if (static_cast<uint8_t>(readable_[i]) > 0){
       return false;
     }
   }

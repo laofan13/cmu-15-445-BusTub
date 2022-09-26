@@ -170,7 +170,7 @@ class HashTableDirectoryPage {
    * @return the high bit corresponding to the bucket's local depth
    */
   auto GetLocalHighBit(uint32_t bucket_idx) -> uint32_t;
-
+  
   /**
    * VerifyIntegrity
    *

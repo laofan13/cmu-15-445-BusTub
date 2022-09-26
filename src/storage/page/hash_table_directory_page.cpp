@@ -16,21 +16,47 @@
 #include "common/logger.h"
 
 namespace bustub {
-auto HashTableDirectoryPage::GetPageId() const -> page_id_t { return page_id_; }
+auto HashTableDirectoryPage::GetPageId() const -> page_id_t { 
+  return page_id_; 
+}
 
-void HashTableDirectoryPage::SetPageId(bustub::page_id_t page_id) { page_id_ = page_id; }
+void HashTableDirectoryPage::SetPageId(bustub::page_id_t page_id) { 
+  page_id_ = page_id;
+}
 
-auto HashTableDirectoryPage::GetLSN() const -> lsn_t { return lsn_; }
+auto HashTableDirectoryPage::GetLSN() const -> lsn_t { 
+  return lsn_; 
+}
 
-void HashTableDirectoryPage::SetLSN(lsn_t lsn) { lsn_ = lsn; }
+void HashTableDirectoryPage::SetLSN(lsn_t lsn) { 
+  lsn_ = lsn; 
+}
 
-auto HashTableDirectoryPage::GetGlobalDepth() -> uint32_t { return global_depth_; }
+auto HashTableDirectoryPage::GetGlobalDepth() -> uint32_t { 
+  return global_depth_; 
+}
 
-auto HashTableDirectoryPage::GetGlobalDepthMask() -> uint32_t { return (1 << global_depth_) - 1; }
+auto HashTableDirectoryPage::GetGlobalDepthMask() -> uint32_t { 
+  return (1 << global_depth_) - 1; 
+}
 
-void HashTableDirectoryPage::IncrGlobalDepth() { global_depth_++;}
+auto HashTableDirectoryPage::GetLocalDepthMask(uint32_t bucket_idx) -> uint32_t { 
+  return (1 << GetLocalDepth(bucket_idx)) - 1;
+}
 
-void HashTableDirectoryPage::DecrGlobalDepth() { global_depth_--; }
+void HashTableDirectoryPage::IncrGlobalDepth() { 
+  BUSTUB_ASSERT(global_depth_ < MAX_BUCKET_DEPTH,"global_depth_ should be less than MAX_BUCKET_DEPTH");
+  int org_num = Size();
+  for (int org_index = 0, new_index = org_num; org_index < org_num; new_index++, org_index++) {
+    bucket_page_ids_[new_index] = bucket_page_ids_[org_index];
+    local_depths_[new_index] = local_depths_[org_index];
+  }
+  global_depth_++;
+}
+
+void HashTableDirectoryPage::DecrGlobalDepth() { 
+  global_depth_--; 
+}
 
 auto HashTableDirectoryPage::GetBucketPageId(uint32_t bucket_idx) -> page_id_t { 
   return bucket_page_ids_[bucket_idx]; 
@@ -42,17 +68,26 @@ void HashTableDirectoryPage::SetBucketPageId(uint32_t bucket_idx, page_id_t buck
 
 auto HashTableDirectoryPage::Size() -> uint32_t { return 1 << global_depth_; }
 
-auto HashTableDirectoryPage::CanShrink() -> bool { return false; }
+auto HashTableDirectoryPage::CanShrink() -> bool { 
+  for (uint32_t i = 0; i < Size(); i++) {
+    if (local_depths_[i] >= global_depth_) {
+      return false;
+    }
+  }
+  return true;
+}
 
 auto HashTableDirectoryPage::GetLocalDepth(uint32_t bucket_idx) -> uint32_t { 
   return local_depths_[bucket_idx]; 
 }
 
 void HashTableDirectoryPage::SetLocalDepth(uint32_t bucket_idx, uint8_t local_depth) {
+  BUSTUB_ASSERT(local_depth <= global_depth_,"local_depth should be less than global_depth_");
   local_depths_[bucket_idx] =  local_depth;
 }
 
 void HashTableDirectoryPage::IncrLocalDepth(uint32_t bucket_idx) {
+  BUSTUB_ASSERT(local_depths_[bucket_idx] < global_depth_,"local_depth should be less than global_depth_");
   local_depths_[bucket_idx]++;
 }
 
@@ -61,8 +96,11 @@ void HashTableDirectoryPage::DecrLocalDepth(uint32_t bucket_idx) {
 }
 
 auto HashTableDirectoryPage::GetLocalHighBit(uint32_t bucket_idx) -> uint32_t { 
-  auto localDepth = GetLocalDepth(bucket_idx);
-  return bucket_idx >> (32 - localDepth); 
+  return bucket_idx & (1 << (local_depths_[bucket_idx] - 1));
+}
+
+uint32_t HashTableDirectoryPage::GetSplitImageIndex(uint32_t bucket_idx) {
+  return bucket_idx ^ (1 << (local_depths_[bucket_idx] - 1));
 }
 
 /**

@@ -25,45 +25,49 @@ InsertExecutor::InsertExecutor(ExecutorContext *exec_ctx, const InsertPlanNode *
     child_executor_(std::move(child_executor)) {}
 
 void InsertExecutor::Init() {
-    auto catalog = exec_ctx_->GetCatalog();
-    table_info_ = catalog->GetTable(plan_->TableOid());
-    indexes_ = catalog->GetTableIndexes(table_info_->name_);
-    
-    if(!plan_->IsRawInsert() && child_executor_ != nullptr) { 
+    catalog_ = exec_ctx_->GetCatalog();
+    table_info_ = catalog_->GetTable(plan_->TableOid());
+    table_heap_ = table_info_->table_.get();
+    if(child_executor_ != nullptr)
         child_executor_->Init();
-    }
+}
+
+void InsertExecutor::InsertTupleWithIndex(Tuple &tuple) {
+  RID rid;
+  // update tuple
+  if (!table_heap_->InsertTuple(tuple, &rid, exec_ctx_->GetTransaction())) {
+    throw Exception(ExceptionType::OUT_OF_MEMORY, "InsertExecutor:no enough space for this tuple.");
+  }
+  // update index
+  for (const auto &index : catalog_->GetTableIndexes(table_info_->name_)) {
+    auto index_key = tuple.KeyFromTuple(table_info_->schema_, *index->index_->GetKeySchema(), index->index_->GetKeyAttrs());
+    index->index_->InsertEntry(index_key, rid, exec_ctx_->GetTransaction()); 
+  }
 }
 
 auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool { 
     if(plan_->IsRawInsert()) {
-        auto raw_vals = plan_->RawValues();
-        for(auto &values: raw_vals) {
+        for(auto &values: plan_->RawValues()) {
             Tuple tmp_tuple(values,&table_info_->schema_);
-            // LOG_DEBUG("Insert a Tuple %s", tmp_tuple.ToString(&table_info_->schema_).c_str());
-            if(!table_info_->table_->InsertTuple(tmp_tuple,rid,exec_ctx_->GetTransaction()))
-                throw Exception("Failed to Insert tuple:" + tmp_tuple.ToString(&table_info_->schema_));
-
-            // update index 
-            for(auto index:indexes_) {
-                auto keyAttrs = index->index_->GetKeyAttrs();
-                auto index_key = tmp_tuple.KeyFromTuple(table_info_->schema_, index->key_schema_, keyAttrs);
-                index->index_->InsertEntry(index_key, *rid, exec_ctx_->GetTransaction()); 
-            }  
+            InsertTupleWithIndex(tmp_tuple);
         }
-    }else{
-        while (child_executor_->Next(tuple, rid)) { 
-            // LOG_DEBUG("Insert a Tuple %s", tuple->ToString(&table_info_->schema_).c_str());
-            if(!table_info_->table_->InsertTuple(*tuple,rid,exec_ctx_->GetTransaction()))
-                throw Exception("Failed to Insert tuple:" + tuple->ToString(&table_info_->schema_));
-            // update index 
-            for(auto index:indexes_) {
-                auto keyAttrs = index->index_->GetKeyAttrs();
-                auto index_key = tuple->KeyFromTuple(table_info_->schema_, index->key_schema_, keyAttrs);
-                index->index_->InsertEntry(index_key, *rid, exec_ctx_->GetTransaction()); 
-            }  
-        }
+        return false;
     }
-    return false; 
+
+    while (1) {
+        Tuple tuple;
+        RID rid;
+        try {
+            if (!child_executor_->Next(&tuple, &rid)) {
+                break;
+            }
+        } catch (Exception &e) { 
+            throw Exception(ExceptionType::UNKNOWN_TYPE, "InsertExecutor:child execute error.");
+            return false;
+        }
+        InsertTupleWithIndex(tuple);
+    }
+    return false;
 }
 
 }  // namespace bustub

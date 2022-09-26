@@ -28,25 +28,33 @@ void LimitExecutor::Init() {
 }
 
 auto LimitExecutor::Next(Tuple *tuple, RID *rid) -> bool {
-    auto scan_schema = child_executor_->GetOutputSchema();
-    while(child_executor_->Next(tuple,rid)) {
-        // return values
-        if(++count_ > plan_->GetLimit()) return false;
-
-        auto outSchema = plan_->OutputSchema();
-        auto columns = outSchema->GetColumns();
-
-        std::vector<Value> values;
-        values.reserve(columns.size());
-        
-        for(auto &col : columns) { 
-            auto expr = col.GetExpr();
-            values.emplace_back(expr->Evaluate(tuple,scan_schema));
+    Tuple new_tuple;
+    RID new_rid;
+    try {
+        if (!child_executor_->Next(&new_tuple, &new_rid)) {
+            return false;
         }
-        *tuple = Tuple(values, outSchema);
-        return true;
+    } catch (Exception &e) { 
+        throw Exception(ExceptionType::UNKNOWN_TYPE, "InsertExecutor:child execute error.");
+        return false;
     }
-    return false; 
+
+    if(++count_ > plan_->GetLimit()) return false;
+
+    // return result
+    auto scan_schema = child_executor_->GetOutputSchema();
+    auto outSchema = plan_->OutputSchema();
+    auto columns = outSchema->GetColumns();
+
+    std::vector<Value> values;
+    values.reserve(columns.size());
+    for(auto &col : columns) { 
+        auto expr = col.GetExpr();
+        values.emplace_back(expr->Evaluate(&new_tuple,scan_schema));
+    }
+    *tuple = Tuple(values, outSchema);
+    *rid = new_rid;
+    return true;
 }
 
 }  // namespace bustub

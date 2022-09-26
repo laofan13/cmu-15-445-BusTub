@@ -20,43 +20,39 @@ namespace bustub {
 SeqScanExecutor::SeqScanExecutor(ExecutorContext *exec_ctx, const SeqScanPlanNode *plan) : 
     AbstractExecutor(exec_ctx),
     plan_(plan),
-    table_iterator_(TableIterator(nullptr, RID(INVALID_PAGE_ID, 0), nullptr)) {}
+    iter_(TableIterator(nullptr, RID(INVALID_PAGE_ID, 0), nullptr)) {}
 
 void SeqScanExecutor::Init() {
-    auto catalog = exec_ctx_->GetCatalog();
-    table_info_ =  catalog->GetTable(plan_->GetTableOid());
-    table_iterator_ = table_info_->table_->Begin(exec_ctx_->GetTransaction());
+    table_info_ =  exec_ctx_->GetCatalog()->GetTable(plan_->GetTableOid());
+    iter_ = table_info_->table_->Begin(exec_ctx_->GetTransaction());
 }
 
 auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool { 
-    auto table_schema = table_info_->schema_;
-    auto predicate = plan_->GetPredicate();
-
-    for(;table_iterator_ != table_info_->table_->End();++table_iterator_) {
-        auto tmp_tuple = *table_iterator_;
-        // LOG_DEBUG("Scan a Tuple %s", tmp_tuple.ToString(&table_info_->schema_).c_str());
-        if(predicate != nullptr) {
-             auto val = predicate->Evaluate(&tmp_tuple,&table_schema);
-             if(!val.GetAs<bool>()) continue;
-        }
-        auto outSchema = plan_->OutputSchema();
-        auto columns = outSchema->GetColumns();
-
-        std::vector<Value> values;
-        values.reserve(columns.size());
-
-        for(auto &col : columns) {
-            auto expr = col.GetExpr();
-            values.emplace_back(expr->Evaluate(&tmp_tuple,&table_schema));
-        }
-        
-        *tuple = Tuple(values, outSchema);
-        *rid = tmp_tuple.GetRid();
-        
-        table_iterator_++;
-        return true;
+    while(1) {
+        if(iter_ == table_info_->table_->End())
+            return false;
+        auto predicate = plan_->GetPredicate();
+        if(predicate == nullptr || predicate->Evaluate(&(*iter_),&table_info_->schema_).GetAs<bool>())
+            break;
+        iter_++;
     }
-    return false; 
+    
+    // return result
+    auto output_schema = plan_->OutputSchema();
+    auto columns = output_schema->GetColumns();
+
+    std::vector<Value> values;
+    values.reserve(columns.size());
+    for(auto &col : columns) {
+        auto expr = col.GetExpr();
+        values.emplace_back(expr->Evaluate(&(*iter_),&table_info_->schema_));
+    }
+
+    *tuple = Tuple(values, output_schema);
+    *rid = iter_->GetRid();
+    
+    iter_++;
+    return true;
 }
 
 }  // namespace bustub

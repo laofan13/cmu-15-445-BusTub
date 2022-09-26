@@ -57,11 +57,16 @@ class InsertExecutor : public AbstractExecutor {
   auto GetOutputSchema() -> const Schema * override { return plan_->OutputSchema(); };
 
  private:
+  void InsertTupleWithIndex(Tuple &tuple);
+
+ private:
   /** The insert plan node to be executed*/
   const InsertPlanNode *plan_;
   std::unique_ptr<AbstractExecutor> child_executor_;
+
+  Catalog *catalog_;
   TableInfo *table_info_;
-  std::vector<IndexInfo *> indexes_;
+  TableHeap *table_heap_;
 };
 
 }  // namespace bustub

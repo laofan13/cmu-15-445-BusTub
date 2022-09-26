@@ -25,58 +25,51 @@ HashJoinExecutor::HashJoinExecutor(ExecutorContext *exec_ctx, const HashJoinPlan
     right_executor_(std::move(right_child)) {}
 
 void HashJoinExecutor::Init() {
-    if(left_executor_ != nullptr) left_executor_->Init();
-    if(right_executor_ != nullptr) {
-        right_executor_->Init();
+    if(left_executor_!= nullptr) {
+        left_executor_->Init();
         Tuple tuple;
         RID rid;
-        while(right_executor_->Next(&tuple,&rid)) {
-            auto right_key_expression = plan_->RightJoinKeyExpression();
-            auto right_key_value = right_key_expression->Evaluate(&tuple,right_executor_->GetOutputSchema());
-            JoinKey joinkey{{right_key_value}};
-            aht_.InsertTuple(joinkey,tuple);
-            // LOG_DEBUG("build SimpleJoinHashTable right_key_value %s,Tuple %s",right_key_value.ToString().c_str(), tuple.ToString(right_executor_->GetOutputSchema()).c_str());
+        while(left_executor_->Next(&tuple,&rid)) {
+            auto expr = plan_->LeftJoinKeyExpression();
+            JoinKey joinkey{{expr->Evaluate(&tuple,left_executor_->GetOutputSchema())}};
+            jht_.InsertTuple(joinkey,tuple);
         }
     }
+    if(right_executor_ != nullptr) right_executor_->Init();
+    it_ = result_.cend();
 }
 
-auto HashJoinExecutor::Next(Tuple *tuple, RID *rid) -> bool { 
-    Tuple left_tuple;
-    RID left_rid;
+auto HashJoinExecutor::Next(Tuple *tuple, RID *rid) -> bool {
     auto out_schema1 = left_executor_->GetOutputSchema();
     auto out_schema2 = right_executor_->GetOutputSchema();
-    auto left_key_expression = plan_->LeftJoinKeyExpression();
-    auto right_key_expression = plan_->RightJoinKeyExpression();
-
-    while(left_executor_->Next(&left_tuple,&left_rid)) {
-        auto left_key_value = left_key_expression->Evaluate(&left_tuple,out_schema1);
-        JoinKey joinkey{{left_key_value}};
-        auto join_tuples = aht_.FindTuple(joinkey);
-
-        for(auto &right_tuple :join_tuples) {
-            auto right_key_value = right_key_expression->Evaluate(&right_tuple,out_schema2);
-            if(left_key_value.CompareEquals(right_key_value) == CmpBool::CmpTrue) {
-                // LOG_DEBUG("left_tuple  Tuple %s", left_tuple.ToString(out_schema1).c_str());
-                // LOG_DEBUG("right_tuple  Tuple %s", right_tuple.ToString(out_schema2).c_str());
-                // return values
-                auto outSchema = plan_->OutputSchema();
-                auto columns = outSchema->GetColumns();
-
-                std::vector<Value> values;
-                values.reserve(columns.size());
-
-                for(auto &col : columns) { 
-                    auto expr_ = col.GetExpr();
-                    values.emplace_back(expr_->EvaluateJoin(&left_tuple,out_schema1,&right_tuple,out_schema2));
-                }
-                *tuple = Tuple(values, outSchema);
-                // LOG_DEBUG("HashJoinExecutor Scan a Tuple %s", tuple->ToString(outSchema).c_str());
-                return true;
+    // LOG_DEBUG("..........");
+    while(it_ == result_.cend()) {
+        try {
+            if (!right_executor_->Next(&right_tuple,&right_rid)) {
+                return false;
             }
+        } catch (Exception &e) { 
+            throw Exception(ExceptionType::UNKNOWN_TYPE, "HashJoinExecutor:child execute error.");
+            return false;
         }
-     }
+        
+        JoinKey joinkey{plan_->RightJoinKeyExpression()->Evaluate(&right_tuple,out_schema2)};
+        result_ = jht_.FindTuple(joinkey);
+        it_ = result_.cbegin();
+    } 
+    // return result
+    auto outSchema = plan_->OutputSchema();
+    auto columns = outSchema->GetColumns();
 
-    return false; 
+    std::vector<Value> values;
+    values.reserve(columns.size());
+    for(auto &col : columns) { 
+        auto expr_ = col.GetExpr();
+        values.emplace_back(expr_->EvaluateJoin(&(*it_),out_schema1,&right_tuple,out_schema2));
+    }
+    *tuple = Tuple(values, outSchema);
+    it_++;
+    return true; 
 }
 
 }  // namespace bustub

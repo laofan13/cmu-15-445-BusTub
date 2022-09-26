@@ -26,48 +26,48 @@ NestedLoopJoinExecutor::NestedLoopJoinExecutor(ExecutorContext *exec_ctx, const 
 void NestedLoopJoinExecutor::Init() {
     if(left_executor_ != nullptr) left_executor_->Init();
     if(right_executor_ != nullptr) right_executor_->Init();
+
+    while(!left_executor_->Next(&left_tuple,&left_rid));
 }
 
 auto NestedLoopJoinExecutor::Next(Tuple *tuple, RID *rid) -> bool {
     Tuple right_tuple;
     RID right_rid;
-    auto predicate = plan_->Predicate();
-    // loop
+    auto out_schema1 = left_executor_->GetOutputSchema();
+    auto out_schema2 = right_executor_->GetOutputSchema();
+
     while(1) {
-        if(!is_left_next) {
-            if(!left_executor_->Next(&left_tuple,&left_rid)) {
-                return false;
+        try {
+            if (!right_executor_->Next(&right_tuple,&right_rid)) {
+                if (!left_executor_->Next(&left_tuple,&left_rid)) {
+                    return false;
+                }
+                right_executor_->Init();
+                continue;
             }
-            is_left_next = true;
+        } catch (Exception &e) { 
+            throw Exception(ExceptionType::UNKNOWN_TYPE, "NestedLoopJoinExecutor:child execute error.");
+            return false;
         }
-        while(right_executor_->Next(&right_tuple,&right_rid)) {
-            auto out_schema1 = left_executor_->GetOutputSchema();
-            auto out_schema2 = right_executor_->GetOutputSchema();
-            if(predicate != nullptr) {
-                auto val = predicate->EvaluateJoin(&left_tuple,out_schema1,&right_tuple,out_schema2);
-                if(!val.GetAs<bool>()) continue;
-            }
-
-            // return values
-            auto outSchema = plan_->OutputSchema();
-            auto columns = outSchema->GetColumns();
-
-            std::vector<Value> values;
-            values.reserve(columns.size());
-            
-            for(auto &col : columns) { 
-                auto expr_ = col.GetExpr();
-                values.emplace_back(expr_->EvaluateJoin(&left_tuple,out_schema1,&right_tuple,out_schema2));
-            }
-            *tuple = Tuple(values, outSchema);
-            // LOG_DEBUG("NestedLoopJoin Scan a Tuple %s", tuple->ToString(outSchema).c_str());
-            return true;
+        
+        auto predicate = plan_->Predicate();
+        if(predicate == nullptr || predicate->EvaluateJoin(&left_tuple,out_schema1,&right_tuple,out_schema2).GetAs<bool>()) {
+            break;
         }
-        right_executor_->Init();
-        is_left_next = false;
     }
+    
+    // return result
+    auto out_schema = plan_->OutputSchema();
+    auto columns = out_schema->GetColumns();
 
-    return false; 
+    std::vector<Value> values;
+    values.reserve(columns.size());
+    for(auto &col : columns) { 
+        auto expr_ = col.GetExpr();
+        values.emplace_back(expr_->EvaluateJoin(&left_tuple,out_schema1,&right_tuple,out_schema2));
+    }
+    *tuple = Tuple(values, out_schema);
+    return true;
 }
 
 }  // namespace bustub

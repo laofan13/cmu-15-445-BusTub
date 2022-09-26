@@ -53,5 +53,7 @@ class DistinctExecutor : public AbstractExecutor {
   const DistinctPlanNode *plan_;
   /** The child executor from which tuples are obtained */
   std::unique_ptr<AbstractExecutor> child_executor_;
+  std::unordered_map<DistinctKey, Tuple> map_;
+  std::unordered_map<DistinctKey, Tuple>::iterator iter_;
 };
 }  // namespace bustub

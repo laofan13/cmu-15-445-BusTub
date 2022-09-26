@@ -22,8 +22,7 @@ ParallelBufferPoolManager::ParallelBufferPoolManager(size_t num_instances, size_
     vec_BPMIs(num_instances) {
     // Allocate and create individual BufferPoolManagerInstances
     for(uint32_t i =0;i < num_instances;i++) {
-      auto *bpm = new BufferPoolManagerInstance(pool_size, num_instances, i, disk_manager, log_manager);
-      vec_BPMIs[i] = bpm;
+      vec_BPMIs[i] = new BufferPoolManagerInstance(pool_size, num_instances, i, disk_manager, log_manager);
     }
  }
 
@@ -41,26 +40,22 @@ auto ParallelBufferPoolManager::GetPoolSize() -> size_t {
 
 auto ParallelBufferPoolManager::GetBufferPoolManager(page_id_t page_id) -> BufferPoolManager * {
   // Get BufferPoolManager responsible for handling given page id. You can use this method in your other methods.
-  auto instance_index = page_id % num_instances_;
-  return vec_BPMIs[instance_index];
+  return vec_BPMIs[page_id % num_instances_];
 }
 
 auto ParallelBufferPoolManager::FetchPgImp(page_id_t page_id) -> Page * {
   // Fetch page for page_id from responsible BufferPoolManagerInstance
-  auto instance_index = page_id % num_instances_;
-  return vec_BPMIs[instance_index]->FetchPage(page_id);
+  return GetBufferPoolManager(page_id)->FetchPage(page_id);
 }
 
 auto ParallelBufferPoolManager::UnpinPgImp(page_id_t page_id, bool is_dirty) -> bool {
   // Unpin page_id from responsible BufferPoolManagerInstance
-  auto instance_index = page_id % num_instances_;
-  return vec_BPMIs[instance_index]->UnpinPage(page_id,is_dirty);
+  return GetBufferPoolManager(page_id)->UnpinPage(page_id, is_dirty);
 }
 
 auto ParallelBufferPoolManager::FlushPgImp(page_id_t page_id) -> bool {
   // Flush page_id from responsible BufferPoolManagerInstance
-  auto instance_index = page_id % num_instances_;
-  return vec_BPMIs[instance_index]->FlushPage(page_id);
+  return GetBufferPoolManager(page_id)->FlushPage(page_id);
 }
 
 auto ParallelBufferPoolManager::NewPgImp(page_id_t *page_id) -> Page * {
@@ -71,28 +66,29 @@ auto ParallelBufferPoolManager::NewPgImp(page_id_t *page_id) -> Page * {
   // 2.   Bump the starting index (mod number of instances) to start search at a different BPMI each time this function
   // is called
   std::unique_lock<std::mutex> latch(latch_);
-  for(uint32_t i = 0; i < num_instances_;++i ) {
-    auto instance_index = (start_index_ + i) % num_instances_;
-    auto page = vec_BPMIs[instance_index]->NewPage(page_id);
-    if(page) {
-      start_index_++;
+  uint32_t idx = start_index_;
+  do {
+    auto page = vec_BPMIs[idx % vec_BPMIs.size()]->NewPage(page_id);
+    if (page != nullptr) {
+      start_index_ = (start_index_ + 1) % vec_BPMIs.size();
       return page;
     }
-  }
+    idx = (idx + 1) % vec_BPMIs.size();
+  } while (idx != start_index_);
+  start_index_ = (start_index_ + 1) % vec_BPMIs.size();
  
   return nullptr;
 }
 
 auto ParallelBufferPoolManager::DeletePgImp(page_id_t page_id) -> bool {
   // Delete page_id from responsible BufferPoolManagerInstance
-  auto instance_index = page_id % num_instances_;
-  return vec_BPMIs[instance_index]->DeletePage(page_id);
+  return GetBufferPoolManager(page_id)->DeletePage(page_id);
 }
 
 void ParallelBufferPoolManager::FlushAllPgsImp() {
   // flush all pages from all BufferPoolManagerInstances
-  for(uint32_t i = 0; i < num_instances_;++i ) {
-    vec_BPMIs[i]->FlushAllPages();
+  for(auto &bpmi : vec_BPMIs) {
+    bpmi->FlushAllPages();
   }
 }
 

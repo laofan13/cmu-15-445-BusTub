@@ -70,7 +70,7 @@ class HashJoinPlanNode : public AbstractPlanNode {
 /** JoinKey represents a key in an join operation */
 struct JoinKey {
   /** The group-by values */
-  std::vector<Value> Join_bys_;
+   Value join_value_;
 
   /**
    * Compares two join keys for equality.
@@ -78,16 +78,9 @@ struct JoinKey {
    * @return `true` if both join keys have equivalent group-by expressions, `false` otherwise
    */
   auto operator==(const JoinKey &other) const -> bool {
-    for (uint32_t i = 0; i < other.Join_bys_.size(); i++) {
-      if (Join_bys_[i].CompareEquals(other.Join_bys_[i]) != CmpBool::CmpTrue) {
-        return false;
-      }
-    }
-    return true;
+    return join_value_.CompareEquals(other.join_value_) == CmpBool::CmpTrue;
   }
 };
-
-using JoinValue = Tuple;
 
 }  // namespace bustub
 
@@ -98,10 +91,8 @@ template <>
 struct hash<bustub::JoinKey> {
   auto operator()(const bustub::JoinKey &agg_key) const -> std::size_t {
     size_t curr_hash = 0;
-    for (const auto &key : agg_key.Join_bys_) {
-      if (!key.IsNull()) {
-        curr_hash = bustub::HashUtil::CombineHashes(curr_hash, bustub::HashUtil::HashValue(&key));
-      }
+    if (!agg_key.join_value_.IsNull()) {
+      curr_hash = bustub::HashUtil::CombineHashes(curr_hash, bustub::HashUtil::HashValue(&agg_key.join_value_));
     }
     return curr_hash;
   }

@@ -26,52 +26,49 @@ AggregationExecutor::AggregationExecutor(ExecutorContext *exec_ctx, const Aggreg
     aht_iterator_(aht_.Begin()) {}
 
 void AggregationExecutor::Init() {
-    if(child_ != nullptr)
-        child_->Init();
     Tuple tuple;
     RID rid;
-    while(child_->Next(&tuple,&rid)) {
-        // build Aggregate Key
-        auto agg_key = MakeAggregateKey(&tuple);
-        // build Aggregate val
-        auto agg_val = MakeAggregateValue(&tuple);
-        aht_.InsertCombine(agg_key,agg_val);
+    if(child_ != nullptr){
+        child_->Init();
+        try {
+            while (child_->Next(&tuple, &rid)) {
+                aht_.InsertCombine(MakeAggregateKey(&tuple), MakeAggregateValue(&tuple));
+            }
+        } catch (Exception &e) {
+            throw Exception(ExceptionType::UNKNOWN_TYPE, "AggregationExecutor:child execute error.");
+        }
+        aht_iterator_ = aht_.Begin();
     }
-    //init iterator
-    aht_iterator_ = aht_.Begin();
 }
 
 auto AggregationExecutor::Next(Tuple *tuple, RID *rid) -> bool { 
-    auto out_schema = GetOutputSchema();
-    auto having = plan_->GetHaving();
-    for( ;aht_iterator_ != aht_.End(); ++aht_iterator_) {
-        auto agg_key = aht_iterator_.Key();
-        auto agg_val = aht_iterator_.Val();
-        
-        // having by
-        if(having != nullptr) {
-            auto val = having->EvaluateAggregate(agg_key.group_bys_,agg_val.aggregates_);
-            if(!val.GetAs<bool>()) {
-                continue;
-            }
-        }
+    AggregateKey agg_key;
+    AggregateValue agg_val;
 
-        auto columns = out_schema->GetColumns();
-        std::vector<Value> values;
-        values.reserve(columns.size());
-        for(auto &col : columns) { 
-            auto expr_ = col.GetExpr();
-            values.emplace_back(expr_->EvaluateAggregate(agg_key.group_bys_,agg_val.aggregates_));
+    while(1) {
+        if (aht_iterator_ == aht_.End()) {
+            return false;
         }
-
-        *tuple = Tuple(values,out_schema);
-        // LOG_DEBUG("Aggregation a Tuple %s", tuple->ToString(out_schema).c_str());
+        agg_key = aht_iterator_.Key();
+        agg_val = aht_iterator_.Val();
+        auto having = plan_->GetHaving();
+        if (having == nullptr || having->EvaluateAggregate(agg_key.group_bys_, agg_val.aggregates_).GetAs<bool>())
+            break;
         ++aht_iterator_;
-        
-        return true;
     }
-    
-    return false; 
+    // return result
+    auto out_schema = GetOutputSchema();
+    auto columns = out_schema->GetColumns();
+
+    std::vector<Value> values;
+    values.reserve(columns.size());
+    for(auto &col : columns) { 
+        auto expr_ = col.GetExpr();
+        values.emplace_back(expr_->EvaluateAggregate(agg_key.group_bys_,agg_val.aggregates_));
+    }
+    *tuple = Tuple(values,out_schema);
+    ++aht_iterator_;
+    return true;
 }
 
 auto AggregationExecutor::GetChildExecutor() const -> const AbstractExecutor * { return child_.get(); }

@@ -57,6 +57,11 @@ auto LockManager::LockShared(Transaction *txn, const RID &rid) -> bool {
         it->granted_ = true;
         break;
       }
+      // wound wait
+      if(pre->lock_mode_ == LockMode::EXCLUSIVE) {
+
+      }
+      
       // wait
       lockRequestQueue->cv_.wait(latch);
     }
@@ -91,7 +96,7 @@ auto LockManager::LockExclusive(Transaction *txn, const RID &rid) -> bool {
         it.granted_ = true;
         break;
       }
-
+      // wait
       lockRequestQueue->cv_.wait(latch);
     }
   }
@@ -144,6 +149,7 @@ auto LockManager::LockUpgrade(Transaction *txn, const RID &rid) -> bool {
         break;
       }
     }
+    // wait
     lockRequestQueue->cv_.wait(latch);
   }
   lockRequestQueue->upgrading_ = INVALID_TXN_ID;

@@ -23,30 +23,40 @@ UpdateExecutor::UpdateExecutor(ExecutorContext *exec_ctx, const UpdatePlanNode *
     child_executor_(std::move(child_executor)){}
 
 void UpdateExecutor::Init() {
-  auto catalog = exec_ctx_->GetCatalog();
-  table_info_ = catalog->GetTable(plan_->TableOid());
-  indexes_ = catalog->GetTableIndexes(table_info_->name_);
+  catalog_ = exec_ctx_->GetCatalog();
+  table_info_ = catalog_->GetTable(plan_->TableOid());
+  table_heap_ = table_info_->table_.get();
 
-  if(child_executor_ != nullptr) 
+  if(child_executor_ != nullptr)
     child_executor_->Init();
 }
 
 auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool { 
-  while(child_executor_->Next(tuple,rid)) {
-    // LOG_DEBUG("updale a Tuple %s", tuple->ToString(&table_info_->schema_).c_str());
-    auto tmp_tuple = GenerateUpdatedTuple(*tuple);
-
-    if(!table_info_->table_->UpdateTuple(tmp_tuple,*rid,exec_ctx_->GetTransaction()))
-        throw Exception("Failed to Update tuple:" + tmp_tuple.ToString(&table_info_->schema_));
-    // update index 
-    for(auto index:indexes_) {
-        auto keyAttrs = index->index_->GetKeyAttrs();
-        auto index_key = tuple->KeyFromTuple(table_info_->schema_, index->key_schema_, keyAttrs);
-        // del previous index_key
-        index->index_->DeleteEntry(index_key,*rid,exec_ctx_->GetTransaction());
-        // add new index_key
-        index_key = tmp_tuple.KeyFromTuple(table_info_->schema_, index->key_schema_, keyAttrs);
-        index->index_->InsertEntry(index_key, *rid, exec_ctx_->GetTransaction()); 
+  Tuple old_tuple;
+  Tuple new_tuple;
+  RID new_rid;
+  while (1) {
+    try {
+      if (!child_executor_->Next(&old_tuple, &new_rid)) {
+        break;
+      }
+    } catch (Exception &e) { 
+      throw Exception(ExceptionType::UNKNOWN_TYPE, "UpdateExecutor:child execute error.");
+      return false;
+    }
+    new_tuple = GenerateUpdatedTuple(old_tuple);
+    if (!table_heap_->UpdateTuple(new_tuple, new_rid, exec_ctx_->GetTransaction())) {
+      throw Exception(ExceptionType::UNKNOWN_TYPE, "UpdateTuple: failed.");
+      return false;
+    }
+    // update index
+    for (const auto &index : catalog_->GetTableIndexes(table_info_->name_)) {
+      // del old index
+      auto old_key = old_tuple.KeyFromTuple(table_info_->schema_, *index->index_->GetKeySchema(), index->index_->GetKeyAttrs());
+      index->index_->DeleteEntry(old_key, new_rid, exec_ctx_->GetTransaction());
+      // add new index_key
+      auto new_key = new_tuple.KeyFromTuple(table_info_->schema_, *index->index_->GetKeySchema(), index->index_->GetKeyAttrs());
+      index->index_->InsertEntry(new_key, new_rid, exec_ctx_->GetTransaction()); 
     }
   }
   return false; 

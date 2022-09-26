@@ -35,18 +35,22 @@ class SimpleJoinHashTable {
    * @param join_key the key to be inserted
    * @param join_val the value to be inserted
    */
-  void InsertTuple(const JoinKey &join_key, const JoinValue &join_val) {
-      ht_.insert({join_key, join_val});
+  void InsertTuple(const JoinKey &join_key, const Tuple &join_val) {
+      if (ht_.count(join_key) != 0) {
+        ht_[join_key].emplace_back(join_val);
+      } else {
+        ht_[join_key] = std::vector{join_val};
+      }
   }
 
   /**
    * Inserts a value into the hash table and then combines it with the current aggregation.
    * @param join_key the key to be inserted
    */
-  auto FindTuple(const JoinKey &join_key) -> std::vector<JoinValue>{
-    std::vector<JoinValue> join_values;
-    for(auto it = ht_.find(join_key); it != ht_.end();++it) {
-      join_values.push_back(it->second);
+  auto FindTuple(const JoinKey &join_key) -> std::vector<Tuple>{
+    std::vector<Tuple> join_values;
+    if (ht_.count(join_key) != 0) {
+      return ht_[join_key];
     }
     return join_values;
   }
@@ -55,13 +59,13 @@ class SimpleJoinHashTable {
   class Iterator {
    public:
     /** Creates an iterator for the aggregate map. */
-    explicit Iterator(std::unordered_map<JoinKey, JoinValue>::const_iterator iter) : iter_{iter} {}
+    explicit Iterator(std::unordered_map<JoinKey, std::vector<Tuple>>::const_iterator iter) : iter_{iter} {}
 
     /** @return The key of the iterator */
     auto Key() -> const JoinKey & { return iter_->first; }
 
     /** @return The value of the iterator */
-    auto Val() -> const JoinValue & { return iter_->second; }
+    auto Val() -> const std::vector<Tuple> & { return iter_->second; }
 
     /** @return The iterator before it is incremented */
     auto operator++() -> Iterator & {
@@ -77,7 +81,7 @@ class SimpleJoinHashTable {
 
    private:
     /** Aggregates map */
-    std::unordered_map<JoinKey, JoinValue>::const_iterator iter_;
+    std::unordered_map<JoinKey, std::vector<Tuple>>::const_iterator iter_;
   };
 
   /** @return Iterator to the start of the hash table */
@@ -88,7 +92,7 @@ class SimpleJoinHashTable {
 
  private:
   /** The hash table is just a map from aggregate keys to aggregate values */
-  std::unordered_map<JoinKey, JoinValue> ht_{};
+  std::unordered_map<JoinKey, std::vector<Tuple>> ht_{};
 };
 
 /**
@@ -126,7 +130,13 @@ class HashJoinExecutor : public AbstractExecutor {
   std::unique_ptr<AbstractExecutor> left_executor_;
   std::unique_ptr<AbstractExecutor> right_executor_;
   /** Simple join hash table */
-  SimpleJoinHashTable aht_;
+  SimpleJoinHashTable jht_;
+
+  // Intermediate results
+  Tuple right_tuple;
+  RID right_rid;
+  std::vector<Tuple> result_;
+  std::vector<bustub::Tuple>::const_iterator it_;
 };
 
 }  // namespace bustub
