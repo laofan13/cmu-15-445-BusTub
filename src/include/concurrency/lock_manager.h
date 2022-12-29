@@ -70,6 +70,8 @@ class LockManager {
    * its current locks.
    */
 
+  inline void InsertLockQueue(LockRequestQueue *lock_queue, txn_id_t txn_id, LockMode lock_mode, bool granted);
+
   /**
    * Acquire a lock on RID in shared mode. See [LOCK_NOTE] in header file.
    * @param txn the transaction requesting the shared lock

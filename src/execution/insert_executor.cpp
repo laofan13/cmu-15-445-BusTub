@@ -34,14 +34,41 @@ void InsertExecutor::Init() {
 
 void InsertExecutor::InsertTupleWithIndex(Tuple &tuple) {
   RID rid;
+  
   // update tuple
   if (!table_heap_->InsertTuple(tuple, &rid, exec_ctx_->GetTransaction())) {
     throw Exception(ExceptionType::OUT_OF_MEMORY, "InsertExecutor:no enough space for this tuple.");
   }
+
+   // 加锁
+  Transaction *transaction = GetExecutorContext()->GetTransaction();
+  LockManager *lock_mgr = GetExecutorContext()->GetLockManager();
+  
+  if (lock_mgr != nullptr) {
+    if (transaction->IsSharedLocked(rid)) {
+      lock_mgr->LockUpgrade(transaction, rid);
+    } else if (!transaction->IsExclusiveLocked(rid)) {
+      lock_mgr->LockExclusive(transaction, rid);
+    }
+  }
+
+//   // record
+//   transaction->GetWriteSet()->emplace_back(TableWriteRecord(
+//           rid,WType::INSERT, tuple,table_heap_));
+
   // update index
   for (const auto &index : catalog_->GetTableIndexes(table_info_->name_)) {
     auto index_key = tuple.KeyFromTuple(table_info_->schema_, *index->index_->GetKeySchema(), index->index_->GetKeyAttrs());
     index->index_->InsertEntry(index_key, rid, exec_ctx_->GetTransaction()); 
+
+    // record
+    transaction->GetIndexWriteSet()->emplace_back(IndexWriteRecord(
+        rid, table_info_->oid_, WType::INSERT, tuple,tuple, index->index_oid_, exec_ctx_->GetCatalog()));
+  }
+
+  // 解锁
+  if (transaction->GetIsolationLevel() == IsolationLevel::READ_COMMITTED && lock_mgr != nullptr) {
+    lock_mgr->Unlock(transaction, rid);
   }
 }
 

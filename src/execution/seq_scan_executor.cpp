@@ -41,11 +41,27 @@ auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
     auto output_schema = plan_->OutputSchema();
     auto columns = output_schema->GetColumns();
 
+    // add lock
+    LockManager *lock_mgr = GetExecutorContext()->GetLockManager();
+    Transaction *txn = GetExecutorContext()->GetTransaction();
+    if (lock_mgr != nullptr) {
+        if (txn->GetIsolationLevel() != IsolationLevel::READ_UNCOMMITTED) {
+            if (!txn->IsSharedLocked(iter_->GetRid()) && !txn->IsExclusiveLocked(iter_->GetRid())) {
+                lock_mgr->LockShared(txn, iter_->GetRid());
+            }
+        }
+    }
+
     std::vector<Value> values;
     values.reserve(columns.size());
     for(auto &col : columns) {
         auto expr = col.GetExpr();
         values.emplace_back(expr->Evaluate(&(*iter_),&table_info_->schema_));
+    }
+
+    // release lock
+    if (txn->GetIsolationLevel() == IsolationLevel::READ_COMMITTED && lock_mgr != nullptr) {
+        lock_mgr->Unlock(txn, iter_->GetRid());
     }
 
     *tuple = Tuple(values, output_schema);

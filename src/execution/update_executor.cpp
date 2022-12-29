@@ -34,29 +34,53 @@ void UpdateExecutor::Init() {
 auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool { 
   Tuple old_tuple;
   Tuple new_tuple;
-  RID new_rid;
+  RID old_rid;
+
+  Transaction *transaction = GetExecutorContext()->GetTransaction();
+  LockManager *lock_mgr = GetExecutorContext()->GetLockManager();
   while (1) {
     try {
-      if (!child_executor_->Next(&old_tuple, &new_rid)) {
+      if (!child_executor_->Next(&old_tuple, &old_rid)) {
         break;
       }
     } catch (Exception &e) { 
       throw Exception(ExceptionType::UNKNOWN_TYPE, "UpdateExecutor:child execute error.");
       return false;
     }
+
+     // add lock
+    if (lock_mgr != nullptr) {
+      if (transaction->IsSharedLocked(old_rid)) {
+        lock_mgr->LockUpgrade(transaction, old_rid);
+      } else if (!transaction->IsExclusiveLocked(old_rid)) {
+        lock_mgr->LockExclusive(transaction, old_rid);
+      }
+    }
+
     new_tuple = GenerateUpdatedTuple(old_tuple);
-    if (!table_heap_->UpdateTuple(new_tuple, new_rid, exec_ctx_->GetTransaction())) {
+    if (!table_heap_->UpdateTuple(new_tuple, old_rid, exec_ctx_->GetTransaction())) {
       throw Exception(ExceptionType::UNKNOWN_TYPE, "UpdateTuple: failed.");
       return false;
     }
+
     // update index
     for (const auto &index : catalog_->GetTableIndexes(table_info_->name_)) {
       // del old index
       auto old_key = old_tuple.KeyFromTuple(table_info_->schema_, *index->index_->GetKeySchema(), index->index_->GetKeyAttrs());
-      index->index_->DeleteEntry(old_key, new_rid, exec_ctx_->GetTransaction());
+      index->index_->DeleteEntry(old_key, old_rid, exec_ctx_->GetTransaction());
+
       // add new index_key
       auto new_key = new_tuple.KeyFromTuple(table_info_->schema_, *index->index_->GetKeySchema(), index->index_->GetKeyAttrs());
-      index->index_->InsertEntry(new_key, new_rid, exec_ctx_->GetTransaction()); 
+      index->index_->InsertEntry(new_key, old_rid, exec_ctx_->GetTransaction()); 
+
+      // record
+      transaction->GetIndexWriteSet()->emplace_back(IndexWriteRecord(
+          old_rid, table_info_->oid_, WType::UPDATE, new_tuple,old_tuple, index->index_oid_, exec_ctx_->GetCatalog()));
+    }
+
+    // 解锁
+    if (transaction->GetIsolationLevel() == IsolationLevel::READ_COMMITTED && lock_mgr != nullptr) {
+      lock_mgr->Unlock(transaction, old_rid);
     }
   }
   return false; 
